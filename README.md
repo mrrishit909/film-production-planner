@@ -91,7 +91,7 @@ Contract: [`docs/openapi.json`](docs/openapi.json).
 | Schedule cost, 12 s of solving | $1.11M to $1.29M (14 to 16 days) | script order: $1.57M to $1.77M (19 to 21 days); 26% to 30% less |
 | Proven lower bound | about half the cost found | |
 | Re-plan after a disruption: scenes moved | 30 to 52 of 85 | solving from scratch: 78 to 85 |
-| Re-plan cost | within 4% of solving from scratch | |
+| Re-plan cost | within 5% of solving from scratch (sometimes lower) | |
 
 Perfect parsing reflects a perfectly formatted script. And no schedule here is proven optimal: the solver's lower bound is far
 below its answer, so the honest claim is "much cheaper than script order", not "cheapest".
@@ -101,7 +101,7 @@ below its answer, so the honest claim is "much cheaper than script order", not "
 Cheapest against least disruptive. After the lead loses three days, solving from scratch reshuffles nearly the whole film (78 to
 85 of 85 scenes moved) for a cost that is sometimes a little lower and sometimes higher. Every moved scene is a location rebooked,
 a crew notified and other actors' weeks rearranged, and none of that is in the cost model. So a re-plan charges $3,000 inside the
-solve for each scene that leaves its earlier day. That keeps 33 to 55 scenes where they were, at a reported cost within 4% of the
+solve for each scene that leaves its earlier day. That keeps 33 to 55 scenes where they were, at a reported cost within 5% of the
 fresh solve. It still moves three to six times the minimum, because a moved scene usually displaces another. The $3,000 is a
 judgement, and it is the one number here I would most want a real assistant director to set.
 
