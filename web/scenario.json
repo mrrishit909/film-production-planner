@@ -1,0 +1,209 @@
+{
+ "service": "film-production-planner",
+ "run": "demo-1",
+ "tokens": {
+  "producer": "studio-producer-demo",
+  "assistant_director": "studio-assistant_director-demo",
+  "crew": "studio-crew-demo"
+ },
+ "steps": [
+  {
+   "title": "Import the screenplay",
+   "say": "A 132-page screenplay in standard format, written by a generator for this demo. The parser reads every scene heading, works out who is physically on set (a voice-over is not; a silent character named only in the action lines is), and counts pages. A producer then approves the breakdown.",
+   "calls": [
+    {
+     "key": "parse",
+     "as": "assistant_director",
+     "method": "POST",
+     "path": "/v1/scripts/parse",
+     "body": {
+      "title": "Low Tide",
+      "source": "demo-screenplay",
+      "start_date": "2026-11-02",
+      "shoot_days": 24,
+      "budget": 1300000
+     }
+    },
+    {
+     "key": "ok",
+     "as": "producer",
+     "method": "POST",
+     "path": "/v1/productions/{{parse.production_id}}/breakdown:approve"
+    }
+   ]
+  },
+  {
+   "title": "Plan A: the cheapest schedule the solver can find",
+   "say": "Films are not shot in story order. The solver groups scenes by location, keeps each actor's days close together because they are paid from their first day to their last, keeps night shoots apart from day calls, and fits exterior day scenes into November daylight.",
+   "calls": [
+    {
+     "key": "a",
+     "as": "assistant_director",
+     "method": "POST",
+     "path": "/v1/scenarios",
+     "body": {
+      "production_id": "{{parse.production_id}}",
+      "name": "Plan A"
+     }
+    },
+    {
+     "key": "opt_a",
+     "as": "assistant_director",
+     "method": "POST",
+     "path": "/v1/schedules/optimize",
+     "body": {
+      "scenario_id": "{{a.scenario_id}}",
+      "seconds": 12
+     }
+    },
+    {
+     "key": "board_a",
+     "as": "crew",
+     "method": "GET",
+     "path": "/v1/schedules/{{a.scenario_id}}"
+    }
+   ]
+  },
+  {
+   "title": "The call sheet for day one",
+   "say": "What the crew actually receives: scenes in shooting order, when each performer is called, sunrise and sunset, and the chance of rain.",
+   "calls": [
+    {
+     "key": "sheet",
+     "as": "crew",
+     "method": "GET",
+     "path": "/v1/call-sheets/{{opt_a.result.first_date}}?scenario_id={{a.scenario_id}}"
+    }
+   ]
+  },
+  {
+   "title": "Then the lead is unavailable, and rain is forecast",
+   "say": "The lead actor loses three days (6, 9 and 10 November) and rain is likely on the 12th and 13th. Plan B is solved to respect both while moving as few scenes as possible from Plan A, so the rest of the crew's plans survive.",
+   "calls": [
+    {
+     "key": "b",
+     "as": "assistant_director",
+     "method": "POST",
+     "path": "/v1/scenarios",
+     "body": {
+      "production_id": "{{parse.production_id}}",
+      "name": "Plan B",
+      "based_on": "{{a.scenario_id}}",
+      "unavailable": {
+       "MARA": [
+        "2026-11-06",
+        "2026-11-09",
+        "2026-11-10"
+       ]
+      },
+      "rain": {
+       "2026-11-12": 0.6,
+       "2026-11-13": 0.5
+      }
+     }
+    },
+    {
+     "key": "opt_b",
+     "as": "assistant_director",
+     "method": "POST",
+     "path": "/v1/schedules/optimize",
+     "body": {
+      "scenario_id": "{{b.scenario_id}}",
+      "seconds": 12
+     }
+    },
+    {
+     "key": "board_b",
+     "as": "crew",
+     "method": "GET",
+     "path": "/v1/schedules/{{b.scenario_id}}"
+    }
+   ]
+  },
+  {
+   "title": "What the change costs",
+   "say": "Plan B against Plan A, line by line, and against the budget.",
+   "calls": [
+    {
+     "key": "var",
+     "as": "producer",
+     "method": "GET",
+     "path": "/v1/budget/variance?scenario_id={{b.scenario_id}}&against={{a.scenario_id}}"
+    },
+    {
+     "key": "sheet_b",
+     "as": "crew",
+     "method": "GET",
+     "path": "/v1/call-sheets/2026-11-12?scenario_id={{b.scenario_id}}"
+    }
+   ]
+  },
+  {
+   "title": "A change that cannot be scheduled",
+   "say": "A third what-if makes the lead unavailable for the entire shoot. The system says so, with the reason, before the solver is even asked, and leaves Plans A and B untouched.",
+   "calls": [
+    {
+     "key": "c",
+     "as": "assistant_director",
+     "method": "POST",
+     "path": "/v1/scenarios",
+     "body": {
+      "production_id": "{{parse.production_id}}",
+      "name": "Plan C",
+      "based_on": "{{b.scenario_id}}",
+      "unavailable": {
+       "MARA": [
+        "2026-11-02",
+        "2026-11-03",
+        "2026-11-04",
+        "2026-11-05",
+        "2026-11-06",
+        "2026-11-09",
+        "2026-11-10",
+        "2026-11-11",
+        "2026-11-12",
+        "2026-11-13",
+        "2026-11-16",
+        "2026-11-17",
+        "2026-11-18",
+        "2026-11-19",
+        "2026-11-20",
+        "2026-11-23",
+        "2026-11-24",
+        "2026-11-25",
+        "2026-11-26",
+        "2026-11-27",
+        "2026-11-30",
+        "2026-12-01",
+        "2026-12-02",
+        "2026-12-03"
+       ]
+      }
+     }
+    },
+    {
+     "key": "opt_c",
+     "as": "assistant_director",
+     "method": "POST",
+     "path": "/v1/schedules/optimize",
+     "body": {
+      "scenario_id": "{{c.scenario_id}}",
+      "seconds": 5
+     }
+    }
+   ]
+  },
+  {
+   "title": "The audit trail",
+   "say": "Who parsed the script, who approved the breakdown, and what each solve produced.",
+   "calls": [
+    {
+     "key": "audit",
+     "as": "producer",
+     "method": "GET",
+     "path": "/v1/audit?limit=10"
+    }
+   ]
+  }
+ ]
+}

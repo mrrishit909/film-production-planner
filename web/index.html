@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Film Production Planner</title>
+<link rel="stylesheet" href="kit.css">
+<style>.board { display:grid; grid-template-columns:86px minmax(0,1fr) 58px; gap:3px 8px; align-items:center; font-size:12px; } .strips { display:flex; height:20px; border-radius:4px; overflow:hidden; background:#101014; }
+.strips i { display:block; height:100%; border-right:1px solid #0b0b0c; } .night { color:#b78cf2; } .over { color:var(--warn); }</style>
+</head>
+<body>
+<header class="top">
+  <h1>Film Production Planner</h1>
+  <span class="sub">An 85-scene screenplay, 12 cast, 14 locations, 24 possible shoot days. What is the cheapest schedule, and what happens when the lead drops out for three days?</span>
+  <span class="mode">…</span>
+  <button class="primary" id="runall">Run all steps</button>
+</header>
+<main>
+  <nav class="steps"></nav>
+  <div><div id="steps"></div></div>
+</main>
+<footer>The screenplay is generated nonsense in correct format; rates, fees and working rules are assumptions, not any union agreement. Schedules are the best found in a few seconds, not proven cheapest. Times are solar time, not clock time.</footer>
+<script src="kit.js"></script>
+<script>
+const USD = v => v == null ? '–' : (Math.abs(v) >= 1e6 ? fmt.usd(v / 1e6, 2) + 'M' : fmt.usd(v / 1e3, 0) + 'k'), CAT = { cast: 'Cast', locations: 'Locations', crew: 'Crew', company_moves: 'Company moves', overtime: 'Overtime', weather_risk: 'Weather risk' };
+const hue = {}; const locColor = n => hue[n] || (hue[n] = `hsl(${(Object.keys(hue).length * 47) % 360} 55% 58%)`);
+const d = s => new Date(s + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+function board(b, rain = {}, gone = []) {
+  const rows = b.days.map(x => `<div class="${x.night ? 'night' : ''}">${d(x.date)}${x.night ? ' ☾' : ''}${rain[x.date] ? ' ☂' : ''}${gone.includes(x.date) ? ' ✕' : ''}</div><div class="strips" title="${x.locations.join(' + ')}">${x.scenes.map(s => `<i style="width:${100 * s.minutes / 720}%;background:${locColor(s.location)};opacity:${s.int_ext === 'EXT' ? 1 : 0.6}" title="scene ${s.scene}: ${s.int_ext}. ${esc(s.location)}, ${s.pages} pages, ${s.minutes} min"></i>`).join('')}</div>
+    <div class="num ${x.minutes > 600 ? 'over' : 'mute'}">${Math.floor(x.minutes / 60)}h${String(x.minutes % 60).padStart(2, '0')}</div>`).join('');
+  const locs = [...new Set(b.days.flatMap(x => x.locations))];
+  return `<div class="board">${rows}</div><div class="legend" style="margin-top:10px">${locs.map(l => `<span><i style="background:${locColor(l)}"></i>${esc(l.toLowerCase())}</span>`).join('')}</div>
+    <div class="small mute" style="margin-top:6px">One strip per scene, width = shooting time (full width = 12 hours), colour = location, brighter = exterior. ☾ night shoot · ☂ rain forecast · ✕ lead unavailable · amber time = overtime.</div>`;
+}
+const solved = (j, label) => { const r = j.result, so = r.script_order || { total: null, shoot_days: '–', costs: {} }; return kpis([{ label: 'Shoot days', value: r.shoot_days, sub: d(r.first_date) + ' to ' + d(r.last_date) }, { label: 'Total cost', value: USD(r.total), sub: 'budget ' + USD(r.budget) },
+    { label: 'In script order', value: USD(so.total), sub: so.shoot_days + ' days' }, { label: 'Saving', value: fmt.pct(1 - r.total / so.total), sub: USD(so.total - r.total) }, { label: 'Night shoots', value: r.night_shoots }, { label: 'Days with overtime', value: r.overtime_days.length }])
+  + `<div class="grid2">${card('Cost by line: ' + label + ' against script order', table([{ k: 'k', label: '' }, { k: 'a', label: label, num: 1, f: USD }, { k: 'b', label: 'Script order', num: 1, f: USD }], Object.keys(CAT).map(k => ({ k: CAT[k], a: r.costs[k], b: so.costs[k] }))))}
+     ${card('Cast: paid from first day to last', table([{ k: 'cast', label: 'Performer' }, { k: 'work_days', label: 'Working', num: 1 }, { k: 'paid_days', label: 'Paid', num: 1 }, { k: 'idle_paid_days', label: 'Idle but paid', num: 1 }], r.cast_days.slice(0, 7)))}</div>
+     <div class="small mute" style="margin:-4px 0 12px">Solver: ${esc(r.solver.note)} (proven lower bound ${USD(r.solver.lower_bound)}). ${esc(r.rules_checked)}.</div>`; };
+const sheet = s => card(`Call sheet · ${d(s.date)} · shoot day ${s.day_number}${s.night_shoot ? ' · night shoot' : ''}`, kpis([{ label: 'Crew call', value: s.crew_call }, { label: 'Estimated wrap', value: s.estimated_wrap, sub: s.overtime_minutes ? s.overtime_minutes + ' min overtime' : 'no overtime' }, { label: 'Sunrise / sunset', value: s.sunrise + ' / ' + s.sunset },
+    { label: 'Chance of rain', value: fmt.pct(s.rain_chance), sub: s.exterior_work ? 'exterior work today' : 'interiors only' }, { label: 'Locations', value: s.locations.length, sub: s.company_move ? 'one company move' : '' }])
+  + `<div class="grid2"><div>${table([{ k: 'starts', label: 'From' }, { k: 'scene', label: 'Sc.', num: 1 }, { k: 'set', label: 'Set' }, { k: 'pages', label: 'Pages', num: 1 }, { k: 'cast', label: 'Cast', f: v => esc(v.map(x => x.toLowerCase()).join(', ')) }], s.scenes)}</div>
+     <div>${table([{ k: 'cast', label: 'Performer' }, { k: 'call', label: 'Call', num: 1 }], s.cast_calls)}</div></div><div class="small mute" style="margin-top:6px">${esc(s.times[0].toUpperCase() + s.times.slice(1))}.</div>`);
+const R = {
+  parse: p => kpis([{ label: 'Scenes', value: p.scenes, sub: p.pages + ' pages' }, { label: 'Interior / exterior', value: p.interior + ' / ' + p.exterior }, { label: 'Night scenes', value: p.night }, { label: 'Cast', value: p.cast }, { label: 'Locations', value: p.locations },
+      { label: 'Shooting time', value: fmt.n(p.shooting_minutes / 60) + ' h', sub: 'at assumed minutes per page' }])
+    + `<div class="grid2">${card('The first scenes as read', table([{ k: 'scene', label: 'Sc.', num: 1 }, { k: 'set', label: 'Heading' }, { k: 'pages', label: 'Pages', num: 1 }, { k: 'cast', label: 'On set', f: v => esc(v.map(x => x.toLowerCase()).join(', ')) }, { k: 'voice_over', label: 'Voice-over only', f: v => esc(v.map(x => x.toLowerCase()).join(', ')) || '–' }], p.sample))}
+       ${card('Scenes per performer', barChart(p.scenes_by_cast.map(([n, v], i) => ({ label: n.toLowerCase(), value: v, color: PALETTE[i % 6] }))))}</div>
+       <div class="small mute" style="margin:-4px 0 12px">${p.scenes_flagged} scenes carry a note for the reviewer (mostly voice-over performers who are not called to set). ${esc(p.method[0].toUpperCase() + p.method.slice(1))}.</div>`,
+  ok: o => `<div class="card" style="border-color:var(--good)">${badge('approved', 'good')} Breakdown approved by ${esc(o.approved_by)}. Scheduling is now allowed.</div>`,
+  opt_a: j => solved(j, 'Plan A'),
+  board_a: b => card('Plan A stripboard', board(b)),
+  sheet: sheet,
+  opt_b: (j, all) => { const r = j.result, a = r.against; return kpis([{ label: 'Scenes that had to move', value: a.had_to_move, sub: 'the lead was in them on her lost days' }, { label: 'Scenes moved in all', value: a.scenes_moved, sub: 'of 85' }, { label: 'Extra cost', value: USD(a.extra_cost), sub: 'total ' + USD(r.total) },
+      { label: 'Extra shoot days', value: a.extra_days }, { label: 'Exteriors on rain days', value: a.exterior_scenes_on_rain_days }, { label: 'Days with overtime', value: r.overtime_days.length }])
+    + card('First scenes moved', table([{ k: 'scene', label: 'Sc.', num: 1 }, { k: 'set', label: 'Set' }, { k: 'from', label: 'Was', f: d }, { k: 'to', label: 'Now', f: d }, { k: 'cast', label: 'Cast', f: v => esc(v.map(x => x.toLowerCase()).join(', ')) }], a.moved.slice(0, 8))); },
+  board_b: (b, all) => card('Plan B stripboard', board(b, all.b.rain, all.b.unavailable.MARA)),
+  var: v => card(`${v.scenario} against ${v.against}, and against the ${USD(v.budget)} budget`, table([{ k: 'category', label: 'Line', f: k => CAT[k] }, { k: 'other', label: v.against, num: 1, f: USD }, { k: 'amount', label: v.scenario, num: 1, f: USD },
+      { k: 'difference', label: 'Change', num: 1, f: x => `<span style="color:${x > 0 ? 'var(--bad)' : x < 0 ? 'var(--good)' : 'inherit'}">${x > 0 ? '+' : ''}${USD(x)}</span>` }], v.lines)
+    + `<p style="margin:10px 0 0"><b>Total ${USD(v.total)}</b>, ${v.total_difference > 0 ? '+' : ''}${USD(v.total_difference)} on ${v.against}; ${v.within_budget ? badge('within budget', 'good') : badge('over budget by ' + USD(v.budget_variance), 'bad')}</p>
+       <div class="small mute" style="margin-top:6px">${esc(v.assumptions.note[0].toUpperCase() + v.assumptions.note.slice(1))}. Crew ${USD(v.assumptions.crew_per_shoot_day)} a shoot day; cast: ${esc(v.assumptions.cast)}.</div>`),
+  sheet_b: sheet,
+  opt_c: j => `<div class="card" style="border-color:var(--bad)">${badge('cannot be scheduled', 'bad')} <b>${esc(j.result.name)}:</b> ${esc(j.result.reasons.join('; '))}. ${esc(j.result.note[0].toUpperCase() + j.result.note.slice(1))}.</div>`,
+  audit: a => card(`Audit log · hash chain ${a.chain_valid ? 'verifies' : 'BROKEN'}`, table([{ k: 'at', label: 'When', f: fmt.time }, { k: 'action', label: 'Action', f: v => `<span class="mono">${esc(v)}</span>` },
+    { k: 'detail', label: 'Detail', f: x => `<span class="small">${esc(Object.entries(x).filter(([, v]) => typeof v !== 'object').map(([k, v]) => `${k}: ${v}`).join(' · ').slice(0, 130))}</span>` }], a.events.slice().reverse())),
+};
+const demo = new Demo(R); demo.init();
+</script>
+</body>
+</html>
